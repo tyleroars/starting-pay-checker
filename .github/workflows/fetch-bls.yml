@@ -60,7 +60,7 @@ jobs:
 
             console.log('Downloading BLS OES national flat file...');
             execSync(
-              'curl -L -o /tmp/oesnat.zip "https://www.bls.gov/oes/special.requests/oesnat.zip"',
+              'curl -L -o /tmp/oesnat.zip "https://www.bls.gov/oes/special-requests/oesm24nat.zip"',
               { stdio: 'inherit' }
             );
 
@@ -84,7 +84,7 @@ jobs:
             // Download education dataset to filter by entry-level education
             console.log('\nDownloading entry-level education dataset...');
             execSync(
-              'curl -L -o /tmp/oes_educ.xlsx "https://www.bls.gov/oes/special.requests/oes_educ.xlsx"',
+              'curl -L -o /tmp/oes_educ.xlsx "https://www.bls.gov/oes/special-requests/oes_educ.xlsx"',
               { stdio: 'inherit' }
             );
 
