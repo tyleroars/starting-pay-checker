@@ -16,7 +16,6 @@ jobs:
           node << 'EOF'
           const XLSX = require('xlsx');
           const { Redis } = require('@upstash/redis');
-          const https = require('https');
           const fs = require('fs');
 
           const redis = new Redis({
@@ -56,32 +55,16 @@ jobs:
           // We exclude "Doctoral or professional degree" and
           // "Some college, no degree" isn't really a BLS category
 
-          function downloadFile(url, dest) {
-            return new Promise((resolve, reject) => {
-              const file = fs.createWriteStream(dest);
-              https.get(url, res => {
-                if (res.statusCode === 302 || res.statusCode === 301) {
-                  https.get(res.headers.location, res2 => {
-                    res2.pipe(file);
-                    file.on('finish', () => { file.close(); resolve(); });
-                  }).on('error', reject);
-                } else {
-                  res.pipe(file);
-                  file.on('finish', () => { file.close(); resolve(); });
-                }
-              }).on('error', reject);
-            });
-          }
-
           async function main() {
+            const { execSync } = require('child_process');
+
             console.log('Downloading BLS OES national flat file...');
-            await downloadFile(
-              'https://www.bls.gov/oes/special.requests/oesnat.zip',
-              '/tmp/oesnat.zip'
+            execSync(
+              'curl -L -o /tmp/oesnat.zip "https://www.bls.gov/oes/special.requests/oesnat.zip"',
+              { stdio: 'inherit' }
             );
 
             console.log('Unzipping...');
-            const { execSync } = require('child_process');
             execSync('unzip -o /tmp/oesnat.zip -d /tmp/oesnat/');
 
             // Find the national xlsx file
@@ -100,9 +83,9 @@ jobs:
 
             // Download education dataset to filter by entry-level education
             console.log('\nDownloading entry-level education dataset...');
-            await downloadFile(
-              'https://www.bls.gov/oes/special.requests/oes_educ.xlsx',
-              '/tmp/oes_educ.xlsx'
+            execSync(
+              'curl -L -o /tmp/oes_educ.xlsx "https://www.bls.gov/oes/special.requests/oes_educ.xlsx"',
+              { stdio: 'inherit' }
             );
 
             const educWb = XLSX.readFile('/tmp/oes_educ.xlsx');
