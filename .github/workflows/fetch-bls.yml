@@ -1,0 +1,271 @@
+name: Fetch BLS OES Data
+
+on:
+  schedule:
+    # Runs every May 16 at 10am UTC (day after BLS annual release)
+    - cron: '0 10 16 5 *'
+  workflow_dispatch:
+
+jobs:
+  fetch-bls:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install dependencies and fetch BLS OES data
+        run: |
+          npm install xlsx node-fetch @upstash/redis
+          node << 'EOF'
+          const XLSX = require('xlsx');
+          const { Redis } = require('@upstash/redis');
+          const https = require('https');
+          const fs = require('fs');
+
+          const redis = new Redis({
+            url: process.env.KV_REST_API_URL,
+            token: process.env.KV_REST_API_TOKEN,
+          });
+
+          // SOC codes to EXCLUDE - management, executive, legal/medical doctoral,
+          // supervisors requiring years of experience, catch-all "all other" broad groups
+          const EXCLUDE_SOC_PREFIXES = [
+            '11-', // Management occupations (CEOs, GMs, etc.)
+          ];
+
+          // Specific SOC codes to exclude (requires doctoral/professional degree or
+          // long apprenticeship that makes no sense for early career)
+          const EXCLUDE_SOC_CODES = new Set([
+            '23-1011','23-1012',                          // Lawyers, judges
+            '29-1213','29-1214','29-1215','29-1216',      // Physicians
+            '29-1221','29-1222','29-1223','29-1224',      // Surgeons
+            '29-1125',                                     // Pharmacists (doctoral)
+            '29-1131',                                     // Veterinarians
+            '25-1000',                                     // Postsecondary teachers (broad)
+            '47-4011',                                     // Construction & building inspectors (long experience)
+          ]);
+
+          // Entry-level education categories we INCLUDE (from BLS education dataset)
+          // These are the BLS education category labels
+          const ENTRY_EDUCATION_INCLUDE = new Set([
+            'No formal educational credential',
+            'High school diploma or equivalent',
+            'Postsecondary nondegree award',
+            "Associate's degree",
+            "Bachelor's degree",
+            "Master's degree",
+          ]);
+
+          // We exclude "Doctoral or professional degree" and
+          // "Some college, no degree" isn't really a BLS category
+
+          function downloadFile(url, dest) {
+            return new Promise((resolve, reject) => {
+              const file = fs.createWriteStream(dest);
+              https.get(url, res => {
+                if (res.statusCode === 302 || res.statusCode === 301) {
+                  https.get(res.headers.location, res2 => {
+                    res2.pipe(file);
+                    file.on('finish', () => { file.close(); resolve(); });
+                  }).on('error', reject);
+                } else {
+                  res.pipe(file);
+                  file.on('finish', () => { file.close(); resolve(); });
+                }
+              }).on('error', reject);
+            });
+          }
+
+          async function main() {
+            console.log('Downloading BLS OES national flat file...');
+            await downloadFile(
+              'https://www.bls.gov/oes/special.requests/oesnat.zip',
+              '/tmp/oesnat.zip'
+            );
+
+            console.log('Unzipping...');
+            const { execSync } = require('child_process');
+            execSync('unzip -o /tmp/oesnat.zip -d /tmp/oesnat/');
+
+            // Find the national xlsx file
+            const files = fs.readdirSync('/tmp/oesnat/');
+            console.log('Files in zip:', files);
+            const xlsxFile = files.find(f => f.toLowerCase().includes('nat') && f.endsWith('.xlsx'));
+            if (!xlsxFile) throw new Error('Could not find national xlsx file. Files: ' + files.join(', '));
+
+            console.log('Parsing:', xlsxFile);
+            const workbook = XLSX.readFile('/tmp/oesnat/' + xlsxFile);
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
+
+            console.log(`Total rows in OES file: ${rows.length}`);
+            console.log('Sample row keys:', Object.keys(rows[0] || {}));
+
+            // Download education dataset to filter by entry-level education
+            console.log('\nDownloading entry-level education dataset...');
+            await downloadFile(
+              'https://www.bls.gov/oes/special.requests/oes_educ.xlsx',
+              '/tmp/oes_educ.xlsx'
+            );
+
+            const educWb = XLSX.readFile('/tmp/oes_educ.xlsx');
+            const educSheet = educWb.Sheets[educWb.SheetNames[0]];
+            const educRows = XLSX.utils.sheet_to_json(educSheet, { defval: null });
+            console.log(`Education rows: ${educRows.length}`);
+            console.log('Education row sample:', educRows[0]);
+
+            // Build SOC -> education map
+            const educMap = {};
+            for (const row of educRows) {
+              // BLS education file columns vary - find SOC and education columns
+              const soc = row['OCC_CODE'] || row['occ_code'] || row['SOC_CODE'] || row['soc_code'];
+              const educ = row['EDUCATION'] || row['education'] || row['Typical entry-level education'] || row['typical_entry_level_education'];
+              if (soc && educ) {
+                educMap[String(soc).trim()] = String(educ).trim();
+              }
+            }
+            console.log(`Education map entries: ${Object.keys(educMap).length}`);
+            console.log('Sample education entries:', Object.entries(educMap).slice(0, 3));
+
+            // Map BLS major group codes to friendly category names for our ICP
+            const CATEGORY_MAP = {
+              '11': null,          // Management - excluded
+              '13': 'Business & Finance',
+              '15': 'Tech',
+              '17': 'Engineering',
+              '19': 'Science & Research',
+              '21': 'Social & Nonprofit',
+              '23': 'Legal',
+              '25': 'Education',
+              '27': 'Creative & Media',
+              '29': 'Healthcare',
+              '31': 'Healthcare Support',
+              '33': 'Protective Services',
+              '35': 'Food & Hospitality',
+              '37': 'Maintenance & Grounds',
+              '39': 'Personal Care',
+              '41': 'Sales',
+              '43': 'Admin & Office',
+              '45': 'Agriculture',
+              '47': 'Construction & Trades',
+              '49': 'Maintenance & Repair',
+              '51': 'Production & Manufacturing',
+              '53': 'Transportation & Logistics',
+            };
+
+            // Filter and transform rows
+            const occupations = [];
+            let skippedManagement = 0;
+            let skippedDoctoralOnly = 0;
+            let skippedBroadGroup = 0;
+            let skippedNoWage = 0;
+            let skippedExcluded = 0;
+
+            for (const row of rows) {
+              // BLS OES columns: OCC_CODE, OCC_TITLE, OCC_GROUP, TOT_EMP,
+              // H_PCT10, H_PCT25, H_MEAN, H_MEDIAN, H_PCT75, H_PCT90,
+              // A_PCT10, A_PCT25, A_MEAN, A_MEDIAN, A_PCT75, A_PCT90
+              const code = String(row['OCC_CODE'] || row['occ_code'] || '').trim();
+              const title = String(row['OCC_TITLE'] || row['occ_title'] || '').trim();
+              const group = String(row['OCC_GROUP'] || row['occ_group'] || '').trim();
+
+              if (!code || !title) continue;
+
+              // Skip broad group rows (these are summary rows, not actual jobs)
+              if (group === 'major' || group === 'minor' || group === 'broad') {
+                skippedBroadGroup++;
+                continue;
+              }
+
+              // Skip management
+              if (code.startsWith('11-')) {
+                skippedManagement++;
+                continue;
+              }
+
+              // Skip specific excluded codes
+              if (EXCLUDE_SOC_CODES.has(code)) {
+                skippedExcluded++;
+                continue;
+              }
+
+              // Skip "All other" catch-all titles
+              if (title.toLowerCase().includes('all other')) {
+                skippedBroadGroup++;
+                continue;
+              }
+
+              // Check entry-level education
+              const educ = educMap[code];
+              if (educ && !ENTRY_EDUCATION_INCLUDE.has(educ)) {
+                skippedDoctoralOnly++;
+                continue;
+              }
+
+              // Annual 10th percentile = entry-level starting pay
+              const entryPay = parseFloat(row['A_PCT10'] || row['a_pct10'] || 0);
+              const p25 = parseFloat(row['A_PCT25'] || row['a_pct25'] || 0);
+              const median = parseFloat(row['A_MEDIAN'] || row['a_median'] || 0);
+              const p75 = parseFloat(row['A_PCT75'] || row['a_pct75'] || 0);
+              const employment = parseFloat(row['TOT_EMP'] || row['tot_emp'] || 0);
+
+              // Skip if no wage data (suppressed by BLS)
+              if (!entryPay || entryPay <= 0) {
+                skippedNoWage++;
+                continue;
+              }
+
+              // Get category from major group (first 2 digits of SOC)
+              const majorGroup = code.substring(0, 2);
+              const category = CATEGORY_MAP[majorGroup] || 'Other';
+
+              if (category === null) {
+                skippedManagement++;
+                continue;
+              }
+
+              occupations.push({
+                code,
+                title,
+                category,
+                entryPay: Math.round(entryPay),
+                p25: Math.round(p25),
+                median: Math.round(median),
+                p75: Math.round(p75),
+                employment: Math.round(employment),
+                education: educ || null,
+              });
+            }
+
+            console.log(`\n=== Results ===`);
+            console.log(`Included occupations: ${occupations.length}`);
+            console.log(`Skipped - management: ${skippedManagement}`);
+            console.log(`Skipped - doctoral only: ${skippedDoctoralOnly}`);
+            console.log(`Skipped - broad group rows: ${skippedBroadGroup}`);
+            console.log(`Skipped - no wage data: ${skippedNoWage}`);
+            console.log(`Skipped - specific exclusions: ${skippedExcluded}`);
+
+            // Sort by title
+            occupations.sort((a, b) => a.title.localeCompare(b.title));
+
+            // Save to Redis
+            const payload = {
+              occupations,
+              year: 2024,
+              updatedAt: new Date().toISOString(),
+              count: occupations.length,
+            };
+
+            console.log('\nSaving to Redis...');
+            await redis.set('spc:data', JSON.stringify(payload));
+            console.log(`Saved ${occupations.length} occupations to Redis.`);
+
+            // Log a few samples
+            console.log('\nSample occupations:');
+            occupations.slice(0, 5).forEach(o => {
+              console.log(`  ${o.code} - ${o.title} (${o.category}) | Entry: $${o.entryPay.toLocaleString()} | Education: ${o.education}`);
+            });
+          }
+
+          main().catch(e => { console.error('FAILED:', e.message); console.error(e.stack); process.exit(1); });
+          EOF
+        env:
+          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
