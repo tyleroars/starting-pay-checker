@@ -20,7 +20,6 @@ const MIN_PAY_OPTIONS = [
   { label: '$80K+', value: 80000 },
 ];
 
-// Education filter options — each filters to exactly that level
 const EDUC_FILTERS = [
   { label: 'Any education', value: 'all' },
   { label: 'No degree', value: 'nodegree' },
@@ -40,8 +39,7 @@ const EDUC_STYLE = {
   "Doctoral":     { bg: '#FDEAEA', color: '#8B2020' },
 };
 
-// Map filter value to education strings in the data
-const EDUC_FILTER_MAP = {
+const EDUC_FILTER_FN = {
   nodegree:   (o) => o.nodegree === true,
   associates: (o) => o.education === "Associate's",
   bachelors:  (o) => o.education === "Bachelor's",
@@ -75,13 +73,13 @@ export default function Home() {
     fetch('/api/occupations')
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
-      .catch(() => { setError('Failed to load data.'); setLoading(false); });
+      .catch(() => { setError('Failed to load.'); setLoading(false); });
   }, []);
 
   const filtered = useMemo(() => {
     if (!data?.occupations) return [];
     const q = search.toLowerCase().trim();
-    const educFn = EDUC_FILTER_MAP[educFilter];
+    const educFn = EDUC_FILTER_FN[educFilter];
     return data.occupations.filter(o => {
       if (category !== 'All fields' && o.category !== category) return false;
       if (o.entryPay < minPay) return false;
@@ -132,10 +130,11 @@ export default function Home() {
         ::placeholder{color:#9E9E9A}
         input:focus,select:focus{outline:none;border-color:#1B3A4B !important}
         a{color:#1B3A4B}
+        .deg-tag{display:inline-block;font-size:11px;font-weight:500;padding:3px 9px;border-radius:6px;background:#F0EDE4;color:#4A4A4A;margin:2px 2px 2px 0}
       `}</style>
 
       {/* Navbar */}
-      <nav style={{background:'#fff',borderBottom:'0.5px solid #E4E0D6',padding:'0 24px',height:56,display:'flex',alignItems:'center',position:'sticky',top:0,zIndex:100}}>
+      <nav style={{background:'#fff',borderBottom:'0.5px solid #E4E0D6',padding:'0 24px',height:56,display:'flex',alignItems:'center',position:'sticky',top:0,zIndex:200}}>
         <a href="https://gradsimple.com" style={{display:'flex',alignItems:'center',gap:9,textDecoration:'none'}}>
           <div style={{width:32,height:32,background:'#1B3A4B',borderRadius:7,display:'flex',alignItems:'center',justifyContent:'center'}}>
             <span style={{color:'#fff',fontSize:13,fontWeight:700,letterSpacing:'-0.5px'}}>GS</span>
@@ -145,9 +144,9 @@ export default function Home() {
         </a>
       </nav>
 
-      {/* Insiders banner */}
-      <div style={{background:'#0D1F2D',padding:'12px 24px',display:'flex',alignItems:'center',justifyContent:'center',gap:16,flexWrap:'wrap'}}>
-        <p style={{fontSize:13,color:'rgba(255,255,255,0.75)',lineHeight:1.5,textAlign:'center'}}>
+      {/* Insiders banner — sticky below navbar */}
+      <div style={{background:'#0D1F2D',padding:'11px 24px',display:'flex',alignItems:'center',justifyContent:'center',gap:16,flexWrap:'wrap',position:'sticky',top:56,zIndex:199}}>
+        <p style={{fontSize:13,color:'rgba(255,255,255,0.75)',lineHeight:1.4,textAlign:'center',margin:0}}>
           Salary is one piece. Want to know which fields are actually hiring right now?
         </p>
         <a href="https://gradsimple.com/gradsimple-insiders/"
@@ -171,7 +170,6 @@ export default function Home() {
 
         {/* Filters */}
         <div style={{marginBottom:24}}>
-
           {/* Search + min pay */}
           <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginBottom:14}}>
             <div style={{position:'relative',flex:1,minWidth:200}}>
@@ -215,13 +213,8 @@ export default function Home() {
           {loading ? 'Loading...' : `${filtered.length.toLocaleString()} occupation${filtered.length!==1?'s':''} found`}
         </div>
 
-        {error && (
-          <div style={{background:'#FDEAEA',border:'1px solid #F0B8B8',borderRadius:8,padding:'16px 20px',color:'#8B2020',fontSize:14}}>{error}</div>
-        )}
-
-        {loading && (
-          <div style={{textAlign:'center',padding:'48px 0',color:'#6B6B6B',fontSize:14}}>Loading occupation data...</div>
-        )}
+        {error && <div style={{background:'#FDEAEA',border:'1px solid #F0B8B8',borderRadius:8,padding:'16px 20px',color:'#8B2020',fontSize:14}}>{error}</div>}
+        {loading && <div style={{textAlign:'center',padding:'48px 0',color:'#6B6B6B',fontSize:14}}>Loading occupation data...</div>}
 
         {!loading && !error && filtered.length === 0 && (
           <div style={{textAlign:'center',padding:'48px 0'}}>
@@ -233,19 +226,21 @@ export default function Home() {
         {/* Cards */}
         {!loading && !error && paginated.map(occ => {
           const isOpen = expandedCode === occ.code;
-          const educStyle = EDUC_STYLE[occ.education] || { bg: '#F0EDE4', color: '#6B6B6B' };
+          const es = EDUC_STYLE[occ.education] || { bg: '#F0EDE4', color: '#6B6B6B' };
+          const degrees = occ.degrees || [];
 
           return (
             <div key={occ.code} onClick={()=>setExpandedCode(prev=>prev===occ.code?null:occ.code)}
               style={{background:'#fff',border:isOpen?'1px solid #1B3A4B':'1px solid #E4E0D6',borderRadius:12,marginBottom:8,cursor:'pointer',overflow:'hidden',transition:'border-color 0.12s'}}>
 
+              {/* Card top */}
               <div style={{display:'flex',alignItems:'center',gap:16,padding:'16px 20px'}}>
                 <div style={{flex:1,minWidth:0}}>
                   <div style={{fontSize:15,fontWeight:700,color:'#1A1A1A',letterSpacing:'-0.2px',marginBottom:6}}>{occ.title}</div>
                   <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
                     <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:6,background:'#E8EFF5',color:'#1B3A4B'}}>{occ.category}</span>
                     {occ.education && (
-                      <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:6,background:educStyle.bg,color:educStyle.color}}>{occ.education}</span>
+                      <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:6,background:es.bg,color:es.color}}>{occ.education}</span>
                     )}
                     {occ.license && (
                       <span style={{fontSize:11,fontWeight:500,padding:'3px 9px',borderRadius:6,background:'#FEF3E2',color:'#854F0B'}}>{occ.license}</span>
@@ -262,9 +257,12 @@ export default function Home() {
                 <div style={{fontSize:14,color:'#6B6B6B',flexShrink:0,transition:'transform 0.2s',transform:isOpen?'rotate(180deg)':'none'}}>↓</div>
               </div>
 
+              {/* Expanded detail */}
               {isOpen && (
                 <div style={{borderTop:'1px solid #E4E0D6',padding:'20px 20px 22px'}}>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,marginBottom: degrees.length ? 16 : 0}}>
+
+                    {/* Pay range */}
                     <div>
                       <div style={{fontSize:10,fontWeight:600,color:'#6B6B6B',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:12}}>Pay range</div>
                       <div style={{border:'1px solid #E4E0D6',borderRadius:8,overflow:'hidden'}}>
@@ -280,6 +278,8 @@ export default function Home() {
                         ))}
                       </div>
                     </div>
+
+                    {/* Role info */}
                     <div>
                       <div style={{fontSize:10,fontWeight:600,color:'#6B6B6B',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:12}}>Role info</div>
                       <div style={{border:'1px solid #E4E0D6',borderRadius:8,overflow:'hidden'}}>
@@ -296,12 +296,25 @@ export default function Home() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Relevant majors/degrees */}
+                  {degrees.length > 0 && (
+                    <div>
+                      <div style={{fontSize:10,fontWeight:600,color:'#6B6B6B',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:8}}>Relevant majors / backgrounds</div>
+                      <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+                        {degrees.map(d=>(
+                          <span key={d} className="deg-tag">{d}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
 
+        {/* Load more */}
         {hasMore && !loading && (
           <div style={{textAlign:'center',marginTop:20}}>
             <button onClick={()=>setPage(p=>p+1)}
