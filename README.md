@@ -4,7 +4,7 @@ Entry-level salary data for hundreds of occupations, powered by BLS OEWS data. B
 
 ## Stack
 
-- Next.js 14 on Vercel (hobby plan, free)
+- Next.js 16 on Vercel (Node.js 20.9 or later; verify the hosting plan and limits before deploying)
 - Upstash Redis for data storage (free tier)
 - GitHub Actions to fetch and process BLS data annually
 
