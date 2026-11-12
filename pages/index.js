@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Head from 'next/head';
 
 const CATEGORIES = [
@@ -68,6 +68,23 @@ export default function Home() {
   const [expandedCode, setExpandedCode] = useState(null);
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 40;
+  const navRef = useRef(null);
+  const bannerRef = useRef(null);
+
+  useEffect(() => {
+    const updateScrollPadding = () => {
+      const height = [navRef.current, bannerRef.current]
+        .reduce((total, el) => total + (el?.getBoundingClientRect().height || 0), 0);
+      document.documentElement.style.setProperty('--pay-checker-sticky-height', `${Math.ceil(height)}px`);
+    };
+    const observer = new ResizeObserver(updateScrollPadding);
+    [navRef.current, bannerRef.current].forEach(el => el && observer.observe(el));
+    updateScrollPadding();
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty('--pay-checker-sticky-height');
+    };
+  }, []);
 
   useEffect(() => {
     fetch('/api/occupations')
@@ -125,16 +142,18 @@ export default function Home() {
       </Head>
       <style>{`
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-        html{font-size:16px;scroll-behavior:smooth}
-        body{font-family:'Inter',sans-serif;background:#FAF9F5;color:#4A4A4A;min-height:100vh;line-height:1.75;-webkit-font-smoothing:antialiased}
+        html{font-size:16px;scroll-behavior:smooth;scroll-padding-top:calc(var(--pay-checker-sticky-height,0px) + 8px)}
+        body{font-family:Inter,sans-serif;background:#FAF9F5;color:#4A4A4A;min-height:100vh;line-height:1.75;-webkit-font-smoothing:antialiased}
         ::placeholder{color:#9E9E9A}
         input:focus,select:focus{outline:none;border-color:#1B3A4B !important}
         a{color:#1B3A4B}
+        button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #1B3A4B;outline-offset:3px}
+        .occupation-toggle:focus-visible{outline-offset:-4px}
         .deg-tag{display:inline-block;font-size:11px;font-weight:500;padding:3px 9px;border-radius:6px;background:#F0EDE4;color:#4A4A4A;margin:2px 2px 2px 0}
       `}</style>
 
       {/* Navbar */}
-      <nav style={{background:'#fff',borderBottom:'0.5px solid #E4E0D6',padding:'0 24px',height:56,display:'flex',alignItems:'center',position:'sticky',top:0,zIndex:200}}>
+      <nav ref={navRef} style={{background:'#fff',borderBottom:'0.5px solid #E4E0D6',padding:'0 24px',height:56,display:'flex',alignItems:'center',position:'sticky',top:0,zIndex:200}}>
         <a href="https://gradsimple.com" style={{display:'flex',alignItems:'center',gap:9,textDecoration:'none'}}>
           <div style={{width:32,height:32,background:'#1B3A4B',borderRadius:7,display:'flex',alignItems:'center',justifyContent:'center'}}>
             <span style={{color:'#fff',fontSize:13,fontWeight:700,letterSpacing:'-0.5px'}}>GS</span>
@@ -145,7 +164,7 @@ export default function Home() {
       </nav>
 
       {/* Insiders banner — sticky below navbar */}
-      <div style={{background:'#0D1F2D',padding:'11px 24px',display:'flex',alignItems:'center',justifyContent:'center',gap:16,flexWrap:'wrap',position:'sticky',top:56,zIndex:199}}>
+      <div ref={bannerRef} style={{background:'#0D1F2D',padding:'11px 24px',display:'flex',alignItems:'center',justifyContent:'center',gap:16,flexWrap:'wrap',position:'sticky',top:56,zIndex:199}}>
         <p style={{fontSize:13,color:'rgba(255,255,255,0.75)',lineHeight:1.4,textAlign:'center',margin:0}}>
           Salary is one piece. Want to know which fields are actually hiring right now?
         </p>
@@ -176,12 +195,12 @@ export default function Home() {
               <svg style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',width:15,height:15,stroke:'#9E9E9A',fill:'none',pointerEvents:'none'}} viewBox="0 0 16 16" strokeWidth="1.5" strokeLinecap="round">
                 <circle cx="6.5" cy="6.5" r="4.5"/><line x1="10" y1="10" x2="14" y2="14"/>
               </svg>
-              <input type="text" value={search} onChange={e=>{setSearch(e.target.value);resetPage();}} placeholder="Search any job title..."
+              <input type="text" aria-label="Search occupations" value={search} onChange={e=>{setSearch(e.target.value);resetPage();}} placeholder="Search any job title..."
                 style={{width:'100%',fontSize:14,fontFamily:'Inter,sans-serif',padding:'0 14px 0 38px',height:40,borderRadius:8,border:'1px solid #E4E0D6',background:'#fff',color:'#1A1A1A'}}/>
             </div>
             <div style={{display:'flex',alignItems:'center',gap:8,whiteSpace:'nowrap'}}>
-              <label style={{fontSize:13,fontWeight:500,color:'#4A4A4A'}}>Min pay</label>
-              <select value={minPay} onChange={e=>{setMinPay(Number(e.target.value));resetPage();}} style={selectStyle}>
+              <label htmlFor="min-pay" style={{fontSize:13,fontWeight:500,color:'#4A4A4A'}}>Min pay</label>
+              <select id="min-pay" value={minPay} onChange={e=>{setMinPay(Number(e.target.value));resetPage();}} style={selectStyle}>
                 {MIN_PAY_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
@@ -192,7 +211,7 @@ export default function Home() {
             <div style={{fontSize:11,fontWeight:600,color:'#6B6B6B',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:8}}>Field</div>
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
               {CATEGORIES.map(cat=>(
-                <button key={cat} onClick={()=>{setCategory(cat);resetPage();}} style={chip(category===cat)}>{cat}</button>
+                <button type="button" key={cat} aria-pressed={category===cat} onClick={()=>{setCategory(cat);resetPage();}} style={chip(category===cat)}>{cat}</button>
               ))}
             </div>
           </div>
@@ -202,7 +221,7 @@ export default function Home() {
             <div style={{fontSize:11,fontWeight:600,color:'#6B6B6B',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:8}}>Education required</div>
             <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
               {EDUC_FILTERS.map(f=>(
-                <button key={f.value} onClick={()=>{setEducFilter(f.value);resetPage();}} style={chip(educFilter===f.value)}>{f.label}</button>
+                <button type="button" key={f.value} aria-pressed={educFilter===f.value} onClick={()=>{setEducFilter(f.value);resetPage();}} style={chip(educFilter===f.value)}>{f.label}</button>
               ))}
             </div>
           </div>
@@ -230,14 +249,18 @@ export default function Home() {
           const degrees = occ.degrees || [];
 
           return (
-            <div key={occ.code} onClick={()=>setExpandedCode(prev=>prev===occ.code?null:occ.code)}
-              style={{background:'#fff',border:isOpen?'1px solid #1B3A4B':'1px solid #E4E0D6',borderRadius:12,marginBottom:8,cursor:'pointer',overflow:'hidden',transition:'border-color 0.12s'}}>
+            <div key={occ.code}
+              style={{background:'#fff',border:isOpen?'1px solid #1B3A4B':'1px solid #E4E0D6',borderRadius:12,marginBottom:8,overflow:'hidden',transition:'border-color 0.12s'}}>
 
               {/* Card top */}
-              <div style={{display:'flex',alignItems:'center',gap:16,padding:'16px 20px'}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:15,fontWeight:700,color:'#1A1A1A',letterSpacing:'-0.2px',marginBottom:6}}>{occ.title}</div>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:5}}>
+              <button type="button" className="occupation-toggle"
+                id={`occupation-toggle-${occ.code}`} aria-expanded={isOpen}
+                aria-controls={`occupation-detail-${occ.code}`}
+                onClick={()=>setExpandedCode(prev=>prev===occ.code?null:occ.code)}
+                style={{display:'flex',alignItems:'center',gap:16,padding:'16px 20px',width:'100%',border:0,background:'transparent',font:'inherit',color:'inherit',textAlign:'left',cursor:'pointer'}}>
+                <span style={{display:'block',flex:1,minWidth:0}}>
+                  <span style={{display:'block',fontSize:15,fontWeight:700,color:'#1A1A1A',letterSpacing:'-0.2px',marginBottom:6}}>{occ.title}</span>
+                  <span style={{display:'flex',flexWrap:'wrap',gap:5}}>
                     <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:6,background:'#E8EFF5',color:'#1B3A4B'}}>{occ.category}</span>
                     {occ.education && (
                       <span style={{fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:6,background:es.bg,color:es.color}}>{occ.education}</span>
@@ -248,18 +271,18 @@ export default function Home() {
                     {occ.nodegree && (
                       <span style={{fontSize:11,fontWeight:500,padding:'3px 9px',borderRadius:6,background:'#E8F5ED',color:'#1A5C32'}}>No degree req.</span>
                     )}
-                  </div>
-                </div>
-                <div style={{textAlign:'right',flexShrink:0}}>
-                  <div style={{fontSize:10,fontWeight:600,color:'#6B6B6B',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:3}}>Starting pay</div>
-                  <div style={{fontSize:24,fontWeight:800,color:'#1A1A1A',letterSpacing:'-1px',fontVariantNumeric:'tabular-nums'}}>{fmt(occ.entryPay)}</div>
-                </div>
-                <div style={{fontSize:14,color:'#6B6B6B',flexShrink:0,transition:'transform 0.2s',transform:isOpen?'rotate(180deg)':'none'}}>↓</div>
-              </div>
+                  </span>
+                </span>
+                <span style={{display:'block',textAlign:'right',flexShrink:0}}>
+                  <span style={{display:'block',fontSize:10,fontWeight:600,color:'#6B6B6B',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:3}}>Starting pay</span>
+                  <span style={{display:'block',fontSize:24,fontWeight:800,color:'#1A1A1A',letterSpacing:'-1px',fontVariantNumeric:'tabular-nums'}}>{fmt(occ.entryPay)}</span>
+                </span>
+                <span aria-hidden="true" style={{display:'block',fontSize:14,color:'#6B6B6B',flexShrink:0,transition:'transform 0.2s',transform:isOpen?'rotate(180deg)':'none'}}>↓</span>
+              </button>
 
               {/* Expanded detail */}
-              {isOpen && (
-                <div style={{borderTop:'1px solid #E4E0D6',padding:'20px 20px 22px'}}>
+              <div id={`occupation-detail-${occ.code}`} hidden={!isOpen}
+                role="region" aria-labelledby={`occupation-toggle-${occ.code}`} style={{borderTop:'1px solid #E4E0D6',padding:'20px 20px 22px'}}>
                   <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:20,marginBottom: degrees.length ? 16 : 0}}>
 
                     {/* Pay range */}
@@ -308,8 +331,7 @@ export default function Home() {
                       </div>
                     </div>
                   )}
-                </div>
-              )}
+              </div>
             </div>
           );
         })}

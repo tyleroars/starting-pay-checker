@@ -2,3 +2,7 @@ node_modules/
 .next/
 .env.local
 .env
+
+# Local accessibility test tooling
+.venv/
+__pycache__/

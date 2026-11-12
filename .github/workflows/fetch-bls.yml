@@ -9,6 +9,7 @@ on:
 jobs:
   fetch-bls:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Install dependencies and fetch BLS OES data
         run: |
@@ -60,7 +61,7 @@ jobs:
 
             console.log('Downloading BLS OES national flat file...');
             execSync(
-              'curl -L -o /tmp/oesnat.zip "https://www.bls.gov/oes/special-requests/oesm24nat.zip"',
+              'curl --fail --show-error --location --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 5 --retry-max-time 240 -o /tmp/oesnat.zip "https://www.bls.gov/oes/special-requests/oesm24nat.zip"',
               { stdio: 'inherit' }
             );
 
@@ -84,7 +85,7 @@ jobs:
             // Download education dataset to filter by entry-level education
             console.log('\nDownloading entry-level education dataset...');
             execSync(
-              'curl -L -o /tmp/oes_educ.xlsx "https://www.bls.gov/oes/special-requests/oes_educ.xlsx"',
+              'curl --fail --show-error --location --connect-timeout 10 --max-time 120 --retry 2 --retry-delay 5 --retry-max-time 240 -o /tmp/oes_educ.xlsx "https://www.bls.gov/oes/special-requests/oes_educ.xlsx"',
               { stdio: 'inherit' }
             );
 
