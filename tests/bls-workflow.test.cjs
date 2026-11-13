@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
+const XLSX = require('xlsx');
 
 const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/fetch-bls.yml'), 'utf8');
 const match = workflow.match(/node << 'EOF'\n([\s\S]*?)\n\s+EOF\n/);
@@ -33,9 +34,11 @@ function runFixture({ downloadError = null, state = {} } = {}) {
     xlsx: {
       readFile(filename) {
         reads.push(filename);
-        return { SheetNames: ['Sheet1'], Sheets: { Sheet1: filename.includes('oes_educ') ? education : wages } };
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(filename.includes('oes_educ') ? education : wages), 'Sheet1');
+        return XLSX.read(XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }), { type: 'buffer' });
       },
-      utils: { sheet_to_json(sheet) { return sheet; } },
+      utils: XLSX.utils,
     },
     '@upstash/redis': {
       Redis: class {
@@ -95,4 +98,17 @@ test('download failures exit without parsing or writing Redis', async () => {
   assert.equal(state.commands.length, 1);
   assert.deepEqual(state.reads, []);
   assert.deepEqual(state.writes, []);
+});
+
+ test('workflow uses the patched, lockfile-pinned SheetJS release', () => {
+  const manifest = require('../package.json');
+  const lock = require('../package-lock.json');
+  assert.equal(XLSX.version, '0.20.3');
+  assert.equal(manifest.dependencies.xlsx, 'https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz');
+  assert.equal(lock.packages['node_modules/xlsx'].version, '0.20.3');
+  assert.ok(lock.packages['node_modules/xlsx'].integrity.startsWith('sha512-'));
+  assert.match(workflow, /actions\/checkout@v4/);
+  assert.match(workflow, /node-version: '22'/);
+  assert.match(workflow, /npm ci --ignore-scripts/);
+  assert.doesNotMatch(workflow, /npm install xlsx/);
 });

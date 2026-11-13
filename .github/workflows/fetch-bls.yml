@@ -11,9 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
       - name: Install dependencies and fetch BLS OES data
         run: |
-          npm install xlsx node-fetch @upstash/redis
+          npm ci --ignore-scripts
           node << 'EOF'
           const XLSX = require('xlsx');
           const { Redis } = require('@upstash/redis');

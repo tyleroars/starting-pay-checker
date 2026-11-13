@@ -15,6 +15,6 @@ Next.js 16 warns that React 18 support is deprecated and will be removed in Next
 
 ## Remaining limitations
 
-- The existing `xlsx` dependency still has a high-severity audit finding and no npm-provided fix. The annual BLS workflow installs and uses SheetJS separately. This framework upgrade does not fix that workflow or claim a clean audit.
+- Follow-up: SheetJS is now pinned to the official 0.20.3 CDN release with lockfile integrity. The annual BLS workflow checks out this repository and uses `npm ci --ignore-scripts`, so it no longer reinstalls the vulnerable npm-registry release. See `docs/sheetjs-security.md`.
 - The current live-route source imports bundled `data/occupations.json`; it does not call the legacy Redis helper. The older README import instructions describe that legacy workflow, not a tested production Redis dependency.
 - The production Node runtime, hosting plan, preview behavior, and spending limits must be verified before publishing. A successful local build is not a deployment or billing guarantee.
